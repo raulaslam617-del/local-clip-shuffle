@@ -11,26 +11,20 @@ interface FolderPickerProps {
 export const FolderPicker = ({ onFolderSelected }: FolderPickerProps) => {
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleFolderSelect = async () => {
+  const handleFolderSelect = () => {
     setIsLoading(true);
+    
     try {
-      // Use the File System Access API for folder selection
-      if ('showDirectoryPicker' in window) {
-        const directoryHandle = await (window as any).showDirectoryPicker();
-        const videoFiles: File[] = [];
-        
-        // Supported video formats
-        const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
-        
-        for await (const [name, handle] of directoryHandle) {
-          if (handle.kind === 'file') {
-            const file = await handle.getFile();
-            const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-            if (videoExtensions.includes(extension)) {
-              videoFiles.push(file);
-            }
-          }
-        }
+      // Create file input for mobile compatibility
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.accept = 'video/*';
+      input.webkitdirectory = true;
+      
+      input.onchange = (event) => {
+        const files = Array.from((event.target as HTMLInputElement).files || []);
+        const videoFiles = files.filter(file => file.type.startsWith('video/'));
         
         if (videoFiles.length === 0) {
           toast({
@@ -45,44 +39,25 @@ export const FolderPicker = ({ onFolderSelected }: FolderPickerProps) => {
           });
           onFolderSelected(videoFiles);
         }
-      } else {
-        // Fallback for browsers that don't support Directory API
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.multiple = true;
-        input.accept = 'video/*';
-        input.webkitdirectory = true;
         
-        input.onchange = (event) => {
-          const files = Array.from((event.target as HTMLInputElement).files || []);
-          const videoFiles = files.filter(file => file.type.startsWith('video/'));
-          
-          if (videoFiles.length === 0) {
-            toast({
-              title: "Tidak ada video ditemukan",
-              description: "Pilih folder yang berisi file video",
-              variant: "destructive"
-            });
-          } else {
-            toast({
-              title: "Folder berhasil dipilih",
-              description: `Ditemukan ${videoFiles.length} video`,
-            });
-            onFolderSelected(videoFiles);
-          }
-        };
-        
+        setIsLoading(false);
+      };
+      
+      input.oncancel = () => {
+        setIsLoading(false);
+      };
+      
+      // Force click for mobile
+      setTimeout(() => {
         input.click();
-      }
+      }, 100);
+      
     } catch (error) {
-      if ((error as Error).name !== 'AbortError') {
-        toast({
-          title: "Error",
-          description: "Gagal memilih folder",
-          variant: "destructive"
-        });
-      }
-    } finally {
+      toast({
+        title: "Error",
+        description: "Gagal memilih folder",
+        variant: "destructive"
+      });
       setIsLoading(false);
     }
   };
