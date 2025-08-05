@@ -1,13 +1,37 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useEffect } from 'react';
+import { FolderPicker } from '@/components/FolderPicker';
+import { VideoPlayer } from '@/components/VideoPlayer';
 
 const Index = () => {
+  const [videoFiles, setVideoFiles] = useState<File[]>([]);
+  const [showPlayer, setShowPlayer] = useState(false);
+
+  // Force dark mode for mobile app
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+  }, []);
+
+  const handleFolderSelected = (files: File[]) => {
+    setVideoFiles(files);
+    setShowPlayer(true);
+  };
+
+  const handleRestart = () => {
+    setShowPlayer(false);
+    setVideoFiles([]);
+  };
+
+  if (showPlayer && videoFiles.length > 0) {
+    return (
+      <VideoPlayer 
+        videoFiles={videoFiles} 
+        onRestart={handleRestart}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
+    <FolderPicker onFolderSelected={handleFolderSelected} />
   );
 };
 
