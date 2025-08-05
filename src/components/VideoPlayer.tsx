@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Play, Pause, SkipForward, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, ArrowLeft, RotateCcw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface VideoPlayerProps {
@@ -10,226 +9,186 @@ interface VideoPlayerProps {
 }
 
 export const VideoPlayer = ({ videoFiles, onRestart }: VideoPlayerProps) => {
+  const [shuffledVideos, setShuffledVideos] = useState<File[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [shuffledIndices, setShuffledIndices] = useState<number[]>([]);
-  const [playedVideos, setPlayedVideos] = useState<Set<number>>(new Set());
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-  const [currentVideoUrl, setCurrentVideoUrl] = useState<string>('');
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
-  // Shuffle array function
-  const shuffleArray = (array: number[]) => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  };
-
-  // Initialize shuffle on mount
+  // Shuffle videos on mount
   useEffect(() => {
-    const indices = Array.from({ length: videoFiles.length }, (_, i) => i);
-    const shuffled = shuffleArray(indices);
-    setShuffledIndices(shuffled);
-    setCurrentIndex(0);
-    setPlayedVideos(new Set());
+    const shuffled = [...videoFiles].sort(() => Math.random() - 0.5);
+    setShuffledVideos(shuffled);
+    toast({
+      title: "Video diacak",
+      description: `${videoFiles.length} video siap diputar`,
+    });
   }, [videoFiles]);
 
-  // Load current video
-  useEffect(() => {
-    if (shuffledIndices.length > 0 && currentIndex < shuffledIndices.length) {
-      const fileIndex = shuffledIndices[currentIndex];
-      const file = videoFiles[fileIndex];
-      
-      if (currentVideoUrl) {
-        URL.revokeObjectURL(currentVideoUrl);
+  // Auto play current video when in view
+  const playVideoInView = useCallback(() => {
+    videoRefs.current.forEach((video, index) => {
+      if (video) {
+        if (index === currentIndex) {
+          video.currentTime = 0;
+          video.play().catch(console.log);
+        } else {
+          video.pause();
+        }
       }
-      
-      const url = URL.createObjectURL(file);
-      setCurrentVideoUrl(url);
-      
-      return () => {
-        URL.revokeObjectURL(url);
-      };
-    }
-  }, [currentIndex, shuffledIndices, videoFiles]);
+    });
+  }, [currentIndex]);
 
-  // Video event handlers
-  const handlePlay = () => {
-    if (videoRef.current) {
-      videoRef.current.play();
-      setIsPlaying(true);
-      
-      // Mark as played
-      const fileIndex = shuffledIndices[currentIndex];
-      setPlayedVideos(prev => new Set([...prev, fileIndex]));
-    }
-  };
+  useEffect(() => {
+    playVideoInView();
+  }, [currentIndex, playVideoInView]);
 
-  const handlePause = () => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      setIsPlaying(false);
+  // Handle scroll snap
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    
+    const container = containerRef.current;
+    const scrollPosition = container.scrollTop;
+    const windowHeight = window.innerHeight;
+    const newIndex = Math.round(scrollPosition / windowHeight);
+    
+    if (newIndex !== currentIndex && newIndex >= 0 && newIndex < shuffledVideos.length) {
+      setCurrentIndex(newIndex);
     }
-  };
+  }, [currentIndex, shuffledVideos.length]);
 
-  const handleNext = () => {
-    if (currentIndex < shuffledIndices.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      setIsPlaying(false);
-    } else {
-      // All videos played
-      setShowCompleteDialog(true);
-      setIsPlaying(false);
-    }
-  };
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  const handleVideoEnd = () => {
-    handleNext();
-  };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   const toggleMute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
-    }
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+    videoRefs.current.forEach(video => {
+      if (video) video.muted = newMuted;
+    });
   };
 
   const handleRestart = () => {
-    setShowCompleteDialog(false);
-    const indices = Array.from({ length: videoFiles.length }, (_, i) => i);
-    const shuffled = shuffleArray(indices);
-    setShuffledIndices(shuffled);
+    const shuffled = [...videoFiles].sort(() => Math.random() - 0.5);
+    setShuffledVideos(shuffled);
     setCurrentIndex(0);
-    setPlayedVideos(new Set());
-    setIsPlaying(false);
-    
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     toast({
       title: "Video direset",
       description: "Urutan video telah diacak ulang",
     });
   };
 
-  const currentVideoName = shuffledIndices.length > 0 && currentIndex < shuffledIndices.length 
-    ? videoFiles[shuffledIndices[currentIndex]].name 
-    : '';
+  if (shuffledVideos.length === 0) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Memuat video...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="relative w-full h-screen bg-black overflow-hidden">
       {/* Video Container */}
-      <div className="flex-1 relative">
-        {currentVideoUrl && (
-          <video
-            ref={videoRef}
-            src={currentVideoUrl}
-            className="w-full h-full object-cover"
-            onEnded={handleVideoEnd}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            playsInline
-            controls={false}
-          />
-        )}
-        
-        {/* Video Overlay */}
-        <div className="absolute inset-0 video-overlay pointer-events-none" />
-        
-        {/* Controls Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Button
-            variant="floating"
-            size="circle"
-            className="pointer-events-auto"
-            onClick={isPlaying ? handlePause : handlePlay}
+      <div
+        ref={containerRef}
+        className="h-full overflow-y-auto snap-y snap-mandatory scrollbar-hide"
+        style={{ scrollBehavior: 'smooth' }}
+      >
+        {shuffledVideos.map((video, index) => (
+          <div
+            key={`${video.name}-${index}`}
+            className="relative w-full h-screen snap-start flex items-center justify-center"
           >
-            {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-          </Button>
-        </div>
-
-        {/* Bottom Controls */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-none">
-          <div className="flex items-center justify-between pointer-events-auto">
-            <div className="flex-1">
-              <p className="text-white font-medium text-sm mb-1 truncate">
-                {currentVideoName}
-              </p>
-              <div className="flex items-center gap-2 text-white/70 text-xs">
-                <span>{playedVideos.size + 1} / {videoFiles.length}</span>
-                <span>•</span>
-                <span>{videoFiles.length - playedVideos.size - 1} tersisa</span>
-              </div>
-            </div>
+            <video
+              ref={(el) => (videoRefs.current[index] = el)}
+              src={URL.createObjectURL(video)}
+              className="w-full h-full object-cover"
+              loop
+              muted={isMuted}
+              playsInline
+              preload="metadata"
+              onLoadedData={() => {
+                if (index === currentIndex) {
+                  videoRefs.current[index]?.play().catch(console.log);
+                }
+              }}
+            />
             
-            <div className="flex items-center gap-2 ml-4">
-              <Button
-                variant="floating"
-                size="icon"
-                onClick={toggleMute}
-              >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </Button>
-              
-              <Button
-                variant="floating"
-                size="icon"
-                onClick={handleNext}
-                disabled={currentIndex >= shuffledIndices.length - 1}
-              >
-                <SkipForward className="w-4 h-4" />
-              </Button>
-              
-              <Button
-                variant="floating"
-                size="icon"
-                onClick={onRestart}
-              >
-                <RotateCcw className="w-4 h-4" />
-              </Button>
+            {/* Video overlay gradient */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none" />
+            
+            {/* Video info */}
+            <div className="absolute bottom-20 left-4 right-20 text-white">
+              <h3 className="font-medium text-sm mb-1 truncate">
+                {video.name.replace(/\.[^/.]+$/, "")}
+              </h3>
+              <p className="text-xs text-white/70">
+                {index + 1} dari {shuffledVideos.length}
+              </p>
             </div>
           </div>
+        ))}
+      </div>
+
+      {/* Right side controls */}
+      <div className="absolute right-4 bottom-32 flex flex-col gap-4">
+        <Button
+          variant="floating"
+          size="icon"
+          onClick={toggleMute}
+          className="bg-black/30 hover:bg-black/50"
+        >
+          {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+        </Button>
+        
+        <Button
+          variant="floating"
+          size="icon"
+          onClick={handleRestart}
+          className="bg-black/30 hover:bg-black/50"
+        >
+          <RotateCcw className="w-5 h-5 text-white" />
+        </Button>
+      </div>
+
+      {/* Top controls */}
+      <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-10">
+        <Button
+          variant="floating"
+          size="icon"
+          onClick={onRestart}
+          className="bg-black/30 hover:bg-black/50"
+        >
+          <ArrowLeft className="w-5 h-5 text-white" />
+        </Button>
+        
+        <div className="text-white text-sm font-medium">
+          Local Clip Shuffle
         </div>
       </div>
 
-      {/* Complete Dialog */}
-      {showCompleteDialog && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
-          <Card className="video-container p-6 max-w-sm w-full text-center animate-slide-up">
-            <div className="mb-6">
-              <div className="mx-auto w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center mb-4 animate-pulse-glow">
-                <Play className="w-8 h-8 text-white" />
-              </div>
-              <h2 className="text-xl font-bold text-foreground mb-2">
-                Semua video sudah diputar
-              </h2>
-              <p className="text-muted-foreground text-sm">
-                Anda telah menonton semua {videoFiles.length} video
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              <Button 
-                variant="tiktok" 
-                className="w-full"
-                onClick={handleRestart}
-              >
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Putar Ulang dengan Urutan Baru
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={onRestart}
-              >
-                Pilih Folder Lain
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
+      {/* Scroll indicator */}
+      <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex flex-col gap-1">
+        {shuffledVideos.map((_, index) => (
+          <div
+            key={index}
+            className={`w-1 h-8 rounded-full transition-colors ${
+              index === currentIndex ? 'bg-white' : 'bg-white/30'
+            }`}
+          />
+        ))}
+      </div>
     </div>
   );
 };
